@@ -1,0 +1,157 @@
+import { Predmet } from "./predmeti.js";
+import { Student } from "./student.js";
+import { Ocena } from "./ocena.js";
+
+export class Application {
+    constructor(predmetiFetched) {
+        this.polja = [
+            {naziv: "Broj indeksa", klasa: "brind"},
+            {naziv: "Ime i prezime", klasa: "imeprezime"},
+            {naziv: "Predmet", klasa: "predmet"},
+            {naziv: "Ocena", klasa: "ocena"}
+        ];
+
+        this.colors = [ "#116bee",
+        "#ee9411",
+        "#36c984"];
+
+        this.predmeti = predmetiFetched.map((p, index) => {
+            const color = this.colors[index % this.colors.length];
+            return new Predmet(p.id, p.naziv, color, this.handleChecked);
+        });
+        this.predmetiIDs = [];
+        this.studenti = [];
+    }
+
+    draw(container) {
+        let section = document.createElement("div");
+        section.classList.add("section");
+        container.appendChild(section);
+
+        const forma = document.createElement("div");
+        forma.classList.add("forma");
+        this.drawForma(forma);
+        
+        section.appendChild(forma);
+        let pretraga = document.createElement("div");
+        pretraga.classList.add("pretraga");
+        section.appendChild(pretraga);
+
+
+        let checkboxes = document.createElement("div");
+        checkboxes.classList.add("checkboxes");
+        pretraga.appendChild(checkboxes);
+        this.drawCheckBoxes(checkboxes);
+
+        let rezultati = document.createElement("div");
+        rezultati.classList.add("rezultati");
+        pretraga.appendChild(rezultati);
+    }
+
+    drawForma(container) {
+        this.polja.forEach(p => {
+            let lbl = document.createElement("lbl");
+            lbl.innerHTML = p.naziv;
+            lbl.classList.add("margin-10");
+            container.appendChild(lbl);
+            let input = document.createElement("input");
+            input.classList.add("margin-10");
+            input.classList.add(`input-${p.klasa}`);
+
+            container.appendChild(input)
+        })
+
+        let btnupisi = document.createElement("input");
+        btnupisi.type = "button";
+        btnupisi.value = "Upisi";
+        btnupisi.classList.add("btn-upisi");
+        btnupisi.classList.add("margin-10");
+        btnupisi.onclick = this.onClickUpisi;
+        container.appendChild(btnupisi);
+    }
+
+    drawCheckBoxes(container) {
+        this.predmeti.forEach(p => {
+            let predmet = document.createElement("div");
+            p.draw(predmet);
+            container.appendChild(predmet);
+        });
+    }
+
+   
+    onClickUpisi = async () => {
+
+
+        let vrednosti = {};
+
+        this.polja.forEach((p) => {
+            let input = document.querySelector(`.input-${p.klasa}`);
+            console.log(input.value);
+            vrednosti[p.klasa] = input.value;
+        });
+
+        const result = await fetch("http://localhost:5192/Ocene/DodajOcenu", {
+            method: "POST",
+            body: JSON.stringify({
+                brojIndeksa: vrednosti["brind"],
+                imePrezime: vrednosti["imeprezime"],
+                predmet: vrednosti["predmet"],
+                ocena: vrednosti["ocena"],
+            }),
+            headers: {
+                "Content-Type": "application/json",
+            },
+        }).then(response => response.json());
+
+        if(this.predmeti.find(p => p.id == result.predmet.id) == null) {
+            const color = this.colors[this.predmeti.length % this.colors.length];
+            const noviPredmet = new Predmet(result.predmet.id, result.predmet.naziv, color);
+            this.predmeti.push(noviPredmet);
+
+            // iscrtati ponovo niz cbs
+            const cbs = document.querySelector(".checkboxes");
+            cbs.replaceChildren();
+            this.drawCheckBoxes(cbs);
+        }
+    };
+
+    handleChecked = async (idPredmeta, isChecked) => {
+        if(isChecked) {
+            this.predmetiIDs.push(idPredmeta);
+        }
+        else {
+            const indexPredmeta = this.predmetiIDs.findIndex((id) => id == idPredmeta);
+            if(indexPredmeta != -1) {
+                this.predmetiIDs.splice(indexPredmeta, 1);
+            }
+        }
+
+        const ocene = await fetch("http://localhost:5192/Ocene/PreuzmiOcene", {
+            method: "PUT",
+            body: JSON.stringify(this.predmetiIDs),
+            headers: {
+                "Content-Type": "application/json"
+            }
+        }).then(response => response.json());
+
+
+        this.studenti = [];
+
+        ocene.forEach(ocena => {
+            let student = this.studenti.find(s => s.id == ocena.student.id);
+            if (student == null) {
+                student = new Student(ocena.student.id, ocena.student.index, ocena.student.imePrezime, []);
+                this.studenti.push(student);
+            }
+            let o = new Ocena(ocena.vrednost, ocena.predmet.naziv);
+            student.dodajOcenu(o);
+        });
+
+        const rez = document.querySelector(".rezultati");
+
+        rez.replaceChildren();
+        this.studenti.forEach((s) => {
+            s.draw(rez, this.predmetiIDs, this.predmeti);
+        });
+    };
+}
